@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生菜庫存進貨日回推系統</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        .spinner { border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid #ffffff; width: 16px; height: 16px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="max-w-6xl mx-auto p-3 md:p-4 lg:p-5">
+        <!-- Main Panel -->
+        <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 mb-4">
+            <!-- Header -->
+            <div class="bg-green-600 px-5 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-green-700/20">
+                <div class="flex items-center gap-2.5">
+                    <div class="p-1.5 bg-green-700 rounded text-white">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold text-white leading-tight">生菜庫存進貨日回推系統</h1>
+                        <p class="text-[10px] text-green-100">Google 試算表 FIFO 庫存分析</p>
+                    </div>
+                </div>
+                <div class="flex gap-1.5">
+                    <span class="text-[10px] bg-green-700/80 text-white px-2 py-1 rounded-full font-medium border border-green-500/20">
+                        📍 倉庫：63-6倉/下層/理貨倉
+                    </span>
+                    <span class="text-[10px] bg-green-800/80 text-white px-2 py-1 rounded-full font-medium border border-green-600/20">
+                        ⚖️ 單位：KG
+                    </span>
+                </div>
+            </div>
+
+            <div class="p-4">
+                <!-- Inputs (左右並排，縮減高度) -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">1. 庫存結餘 Google Sheet (CSV 網址)</label>
+                        <input 
+                            type="text" 
+                            id="inventoryUrl" 
+                            value="https://docs.google.com/spreadsheets/d/e/2PACX-1vRqhij3tYIKCP5YwznxO0uCrthJDE09xE8pOG76mejZDrH6xFyPRndBKnx9UBwQmnxxyvcE9vUUZJqk/pubhtml?gid=322034433&single=true" 
+                            class="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 focus:border-green-500 outline-none text-xs text-gray-600 bg-gray-50 font-mono"
+                        />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">2. 各日期進貨數量 Google Sheet (CSV 網址)</label>
+                        <input 
+                            type="text" 
+                            id="incomingUrl" 
+                            value="https://docs.google.com/spreadsheets/d/e/2PACX-1vQgBMBn1B-GhBZmRa7vSANmt71r-lJxRTaSPb3xi9XhmrUgB203uY_nXTBlqa2kqPhtU3tRd1A4jXsD/pub?output=csv" 
+                            class="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 focus:border-green-500 outline-none text-xs text-gray-600 bg-gray-50 font-mono"
+                        />
+                    </div>
+                </div>
+
+                <!-- Auto Refresh Bar (極簡化緊湊設計) -->
+                <div class="bg-gray-50 rounded-md px-3 py-2 mb-3 flex flex-col sm:flex-row items-center justify-between gap-2 border border-gray-200">
+                    <div class="flex items-center gap-2">
+                        <span id="refreshIndicator" class="flex h-2 w-2 relative shrink-0">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                        </span>
+                        <span id="refreshStatusText" class="text-[11px] font-semibold text-gray-500">自動刷新計時中</span>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="flex-1 max-w-sm w-full bg-gray-200 rounded-full h-1.5 overflow-hidden mx-1">
+                        <div id="refreshProgressBar" class="bg-green-500 h-full transition-all duration-1000 ease-linear" style="width: 100%"></div>
+                    </div>
+
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span id="countdownTimer" class="text-xs font-bold text-gray-600 font-mono">30s</span>
+                        <button 
+                            id="btnToggleRefresh" 
+                            class="text-[10px] bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 font-medium py-0.5 px-2 rounded transition-colors shadow-sm flex items-center gap-1"
+                        >
+                            <svg id="iconPause" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                            </svg>
+                            <svg id="iconPlay" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 hidden" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                            </svg>
+                            <span id="textToggleRefresh">暫停刷新</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Info Box (改為折疊式 details，不佔平時空間) -->
+                <details class="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-md mb-3 text-xs overflow-hidden group">
+                    <summary class="font-semibold text-emerald-900 cursor-pointer p-2 flex justify-between items-center list-none select-none hover:bg-emerald-100/50 transition-colors">
+                        <span class="flex items-center gap-1">
+                            <span class="text-emerald-600 text-sm">💡</span> 
+                            系統自動解析邏輯說明 (點此展開)
+                        </span>
+                        <svg class="h-4 w-4 transform transition-transform group-open:rotate-180" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </summary>
+                    <div class="px-3 pb-2.5 pt-1 space-y-1 text-[11px] text-emerald-800 border-t border-emerald-100">
+                        <p>● <b>庫存結餘</b>：抓取 B 欄品號，且過濾 <b>D 欄為 "KG"</b> 且 <b>E 欄為 "63-6倉/下層/理貨倉"</b>，以 <b>F 欄庫存量</b> 為基準進行回推。</p>
+                        <p>● <b>進貨日期</b>：自動解析進貨表 B 欄品號，並由 <b>F 欄 (Index 5) 往右橫向抓取</b> 各日期之進貨數量進行先進先出（FIFO）計算。</p>
+                    </div>
+                </details>
+
+                <!-- Error Alert -->
+                <div id="errorAlert" class="hidden bg-red-50 border-l-4 border-red-500 text-red-700 p-3 mb-3 rounded-r-md text-xs" role="alert">
+                    <p class="font-medium">讀取失敗</p>
+                    <p id="errorMessage" class="text-[11px]"></p>
+                </div>
+
+                <!-- Diagnostic Console Toggle -->
+                <div class="mb-2 text-right">
+                    <button id="btnToggleDiag" class="text-[10px] text-gray-400 hover:text-blue-600 font-semibold underline">
+                        顯示背景診斷數據與檔案內容預覽
+                    </button>
+                </div>
+
+                <!-- Diagnostic Panel -->
+                <div id="diagnosticPanel" class="hidden bg-gray-900 text-gray-300 rounded-lg p-4 mb-4 text-[11px] font-mono">
+                    <h3 class="font-semibold text-white mb-2 text-xs border-b border-gray-700 pb-1.5 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                        💻 背景數據診斷與預覽中心
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <div class="space-y-0.5">
+                            <p class="text-white font-semibold">【匹配數據指標】</p>
+                            <p>● 庫存表讀取總列數：<span id="diagTotalRows" class="text-green-400 font-bold">0</span> 列</p>
+                            <p>● 單位為 "KG" 的列數：<span id="diagKgRows" class="text-green-400 font-bold">0</span> 列</p>
+                            <p>● 倉庫為 "理貨倉" 的列數：<span id="diagWhRows" class="text-green-400 font-bold">0</span> 列</p>
+                            <p>● 符合 "理貨倉 + KG" 的加總：<span id="diagMatchedRows" class="text-yellow-400 font-bold">0</span> 列</p>
+                        </div>
+                        <div class="text-gray-400 space-y-0.5">
+                            <p class="text-white font-semibold">【系統設定預期欄位】</p>
+                            <p>● [B 欄 / 索引 1]：品項代號</p>
+                            <p>● [D 欄 / 索引 3]：單位 (預期: KG)</p>
+                            <p>● [E 欄 / 索引 4]：倉庫 (預期: 63-6倉/下層/理貨倉)</p>
+                            <p>● [F 欄 / 索引 5]：庫存量 (結餘數字)</p>
+                        </div>
+                    </div>
+                    
+                    <div class="border-t border-gray-800 pt-2 mb-2">
+                        <p class="text-white font-semibold mb-0.5">📋 庫存結餘表 (檔案 1) 前 3 列實際內容：</p>
+                        <div id="diagInvPreview" class="bg-black/50 p-2 rounded text-gray-300 overflow-x-auto whitespace-pre leading-relaxed border border-gray-800 text-[10px]">尚未載入數據</div>
+                    </div>
+                    
+                    <div class="border-t border-gray-800 pt-2">
+                        <p class="text-white font-semibold mb-0.5">📋 各日期進貨表 (檔案 2) 前 3 列實際內容：</p>
+                        <div id="diagIncPreview" class="bg-black/50 p-2 rounded text-gray-300 overflow-x-auto whitespace-pre leading-relaxed border border-gray-800 text-[10px]">尚未載入數據</div>
+                    </div>
+                </div>
+
+                <!-- Action Button (更緊湊，取消閃爍動畫以符合高階質感) -->
+                <button 
+                    id="btnSubmit"
+                    class="w-full py-2.5 rounded-lg font-bold text-white flex items-center justify-center gap-2 transition-all bg-green-600 hover:bg-green-700 shadow-sm text-sm"
+                >
+                    <span id="btnSpinner" class="hidden spinner"></span>
+                    <svg id="btnIcon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+                    </svg>
+                    <span id="btnText">讀取表單並計算庫存進貨日</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Results Table -->
+        <div id="resultsSection" class="hidden bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+            <div class="px-5 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-sm font-bold text-gray-800">生菜剩餘庫存進貨日期推算 (理貨倉 - KG)</h2>
+                <span id="lastUpdated" class="text-[11px] text-gray-500">最後更新：--:--:--</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-100 text-gray-600 text-xs">
+                            <th class="px-5 py-2.5 border-b font-semibold w-28">品號</th>
+                            <th class="px-5 py-2.5 border-b font-semibold w-48">品名</th>
+                            <th class="px-5 py-2.5 border-b font-semibold text-right w-36">剩餘結餘庫存</th>
+                            <th class="px-5 py-2.5 border-b font-semibold">庫存組成進貨日期回推 (先進先出)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTableBody" class="text-xs">
+                        <!-- 動態計算數據填裝處 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 固定的生菜品項資料
+        const PRODUCT_LIST = [
+            { code: 'T05000101', name: '紅捲生菜' },
+            { code: 'T05000102', name: '紅捲生菜［水耕］' },
+            { code: 'T06000101', name: '綠捲鬚生菜' },
+            { code: 'T07000101', name: '紅橡木生菜' },
+            { code: 'T08000101', name: '綠橡木生菜' },
+            { code: 'T08000102', name: '綠橡木生菜［水耕］' },
+            { code: 'T09000101', name: '紅火焰生菜' },
+            { code: 'T10000101', name: '綠火焰生菜' },
+            { code: 'T10000102', name: '綠火焰生菜［水耕］' },
+            { code: 'T11000101', name: '紅蘿蔓' },
+            { code: 'T12000101', name: '波士頓奶油生菜' },
+            { code: 'T12000102', name: '波士頓奶油生菜［水耕］' },
+            { code: 'T13000101', name: '羽衣甘藍' },
+            { code: 'T14000101', name: '巴西里［平葉］' },
+            { code: 'T14000102', name: '巴西里［捲葉］' },
+            { code: 'T15000101', name: '紅包心生菜' },
+            { code: 'T17000101', name: '本產紫高麗菜' },
+            { code: 'T18000101', name: '紅甜脆生菜［水耕］' },
+            { code: 'T19000101', name: '綠甜脆生菜［水耕］' },
+            { code: 'T20000101', name: '綠水晶生菜［水耕］' },
+            { code: 'T21000101', name: '廣東生菜' }
+        ];
+
+        // 溫和清新的配色方案，供不同進貨日交錯搭配使用
+        const COLOR_SCHEMES = [
+            { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700' },
+            { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700' },
+            { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700' },
+            { bg: 'bg-pink-50', border: 'border-pink-200', text: 'text-pink-700' },
+            { bg: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-700' },
+            { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700' },
+            { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700' },
+            { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700' }
+        ];
+
+        // 根據日期名稱生成固定的雜湊色彩
+        const getDateColorClass = (dateStr) => {
+            if (!dateStr || dateStr.includes('早期結餘')) {
+                return { bg: 'bg-gray-100', border: 'border-gray-300', text: 'text-gray-600' };
+            }
+            let hash = 0;
+            for (let i = 0; i < dateStr.length; i++) {
+                hash = dateStr.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % COLOR_SCHEMES.length;
+            return COLOR_SCHEMES[index];
+        };
+
+        // 倉庫與單位過濾常數
+        const FILTER_WAREHOUSE = "63-6倉/下層/理貨倉";
+        const FILTER_UNIT = "KG";
+
+        // 動態更新計時器設定
+        const REFRESH_SECONDS = 30;
+        let countdownSeconds = REFRESH_SECONDS;
+        let isAutoRefreshActive = true;
+        let autoRefreshTimer = null;
+
+        // DOM 綁定
+        const btnSubmit = document.getElementById('btnSubmit');
+        const btnSpinner = document.getElementById('btnSpinner');
+        const btnIcon = document.getElementById('btnIcon');
+        const btnText = document.getElementById('btnText');
+        const errorAlert = document.getElementById('errorAlert');
+        const errorMessage = document.getElementById('errorMessage');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsTableBody = document.getElementById('resultsTableBody');
+        const lastUpdatedText = document.getElementById('lastUpdated');
+        
+        // 診斷面版 DOM
+        const btnToggleDiag = document.getElementById('btnToggleDiag');
+        const diagnosticPanel = document.getElementById('diagnosticPanel');
+        const diagTotalRows = document.getElementById('diagTotalRows');
+        const diagKgRows = document.getElementById('diagKgRows');
+        const diagWhRows = document.getElementById('diagWhRows');
+        const diagMatchedRows = document.getElementById('diagMatchedRows');
+        const diagInvPreview = document.getElementById('diagInvPreview');
+        const diagIncPreview = document.getElementById('diagIncPreview');
+
+        // 自動刷新組件 DOM
+        const btnToggleRefresh = document.getElementById('btnToggleRefresh');
+        const iconPause = document.getElementById('iconPause');
+        const iconPlay = document.getElementById('iconPlay');
+        const textToggleRefresh = document.getElementById('textToggleRefresh');
+        const countdownTimer = document.getElementById('countdownTimer');
+        const refreshProgressBar = document.getElementById('refreshProgressBar');
+        const refreshIndicator = document.getElementById('refreshIndicator');
+        const refreshStatusText = document.getElementById('refreshStatusText');
+
+        // 診斷面板開關
+        btnToggleDiag.addEventListener('click', () => {
+            diagnosticPanel.classList.toggle('hidden');
+        });
+
+        // 數值清理輔助器
+        const parseNumber = (val) => {
+            if (val === undefined || val === null) return 0;
+            const cleaned = val.toString().replace(/,/g, '').trim();
+            const num = parseFloat(cleaned);
+            return isNaN(num) ? 0 : num;
+        };
+
+        // 字串模糊與 BOM 清除正規化
+        const normalizeStr = (str) => {
+            if (str === undefined || str === null) return '';
+            return str.toString()
+                .replace(/\s+/g, '')                      // 移除所有空格與換行
+                .replace(/[\ufeff\u200b\u00a0]/g, '')     // 移除 BOM 與特殊零寬度空格
+                .replace(/／/g, '/')                      // 全形斜線轉半形斜線
+                .trim()
+                .toUpperCase();
+        };
+
+        // 抓取與解析 CSV
+        const fetchCSV = (url) => {
+            const fixedUrl = url.replace(/\/pubhtml$/, '/pub?output=csv').replace(/\/pubhtml\?/, '/pub?output=csv&');
+            return new Promise((resolve, reject) => {
+                Papa.parse(fixedUrl, {
+                    download: true,
+                    header: false, // 全部使用 2D 陣列索引直接讀取，避開標題對不齊的風險
+                    skipEmptyLines: true,
+                    complete: (results) => resolve(results.data),
+                    error: (err) => reject(err)
+                });
+            });
+        };
+
+        // 點擊執行回推
+        const triggerFetching = () => {
+            const inventoryUrl = document.getElementById('inventoryUrl').value.trim();
+            const incomingUrl = document.getElementById('incomingUrl').value.trim();
+
+            if (!inventoryUrl || !incomingUrl) {
+                showError("請填妥兩份 Google Sheet 的 CSV 網址！");
+                return;
+            }
+
+            setLoading(true);
+            hideError();
+
+            Promise.all([
+                fetchCSV(inventoryUrl),
+                fetchCSV(incomingUrl)
+            ]).then(([invData, incData]) => {
+                processAndCalculate(invData, incData);
+                lastUpdatedText.textContent = `最後更新：${new Date().toLocaleTimeString()}`;
+                resultsSection.classList.remove('hidden');
+            }).catch(err => {
+                showError("讀取試算表失敗，請檢查網址或確定該試算表「已發布到網路(CSV)」。\n詳細原因：" + err.message);
+            }).finally(() => {
+                setLoading(false);
+                // 重設倒數計時
+                countdownSeconds = REFRESH_SECONDS;
+                updateProgressBar();
+            });
+        };
+
+        btnSubmit.addEventListener('click', triggerFetching);
+
+        // 暫停與播放自動刷新
+        btnToggleRefresh.addEventListener('click', () => {
+            isAutoRefreshActive = !isAutoRefreshActive;
+            if (isAutoRefreshActive) {
+                // 啟動
+                iconPause.classList.remove('hidden');
+                iconPlay.classList.add('hidden');
+                textToggleRefresh.textContent = '暫停刷新';
+                refreshIndicator.classList.remove('hidden');
+                refreshStatusText.textContent = '自動刷新計時中';
+                refreshProgressBar.classList.remove('bg-gray-400');
+                refreshProgressBar.classList.add('bg-green-500');
+            } else {
+                // 暫停
+                iconPause.classList.add('hidden');
+                iconPlay.classList.remove('hidden');
+                textToggleRefresh.textContent = '啟動刷新';
+                refreshIndicator.classList.add('hidden');
+                refreshStatusText.textContent = '自動刷新已暫停';
+                refreshProgressBar.classList.remove('bg-green-500');
+                refreshProgressBar.classList.add('bg-gray-400');
+            }
+        });
+
+        // 定時刷新核心計時器 (每秒執行一次)
+        const initAutoRefreshTimer = () => {
+            autoRefreshTimer = setInterval(() => {
+                if (!isAutoRefreshActive) return;
+
+                countdownSeconds--;
+                countdownTimer.textContent = `${countdownSeconds}s`;
+                updateProgressBar();
+
+                if (countdownSeconds <= 0) {
+                    triggerFetching();
+                }
+            }, 1000);
+        };
+
+        // 更新進度條視覺
+        const updateProgressBar = () => {
+            const percentage = (countdownSeconds / REFRESH_SECONDS) * 100;
+            refreshProgressBar.style.width = `${percentage}%`;
+            countdownTimer.textContent = `${countdownSeconds}s`;
+        };
+
+        // FIFO 計算與資料渲染核心
+        const processAndCalculate = (invData, incData) => {
+            try {
+                // 更新診斷預覽畫面
+                let invPreviewText = '';
+                invData.slice(0, 3).forEach((row, i) => {
+                    invPreviewText += `[列 ${i + 1}]：` + JSON.stringify(row) + '\n';
+                });
+                diagInvPreview.textContent = invPreviewText || '無資料';
+
+                let incPreviewText = '';
+                incData.slice(0, 3).forEach((row, i) => {
+                    incPreviewText += `[列 ${i + 1}]：` + JSON.stringify(row) + '\n';
+                });
+                diagIncPreview.textContent = incPreviewText || '無資料';
+
+                // 1. 讀取庫存結餘表 (B 欄為品代 row[1], D 欄為單位 row[3], E 欄為倉庫 row[4], F 欄為庫存量 row[5])
+                const currentInventory = {};
+                let countTotal = 0;
+                let countKg = 0;
+                let countWh = 0;
+                let countMatched = 0;
+
+                invData.forEach((row, idx) => {
+                    if (idx === 0) return; // 略過標題列
+                    countTotal++;
+
+                    let code = row[1];       // B 欄
+                    let unit = row[3];       // D 欄
+                    let warehouse = row[4];  // E 欄
+                    let qtyVal = row[5];     // F 欄
+
+                    if (!code) return;
+
+                    const normCode = normalizeStr(code);
+                    const normUnit = normalizeStr(unit);
+                    const normWh = normalizeStr(warehouse);
+
+                    // 診斷計數
+                    if (normUnit === normalizeStr(FILTER_UNIT)) countKg++;
+                    if (normWh === normalizeStr(FILTER_WAREHOUSE) || (normWh.includes("63-6") && normWh.includes("理貨倉"))) countWh++;
+
+                    // 過濾條件：單位 KG 且 倉庫為理貨倉
+                    const whMatch = (normWh === normalizeStr(FILTER_WAREHOUSE)) || (normWh.includes("63-6") && normWh.includes("理貨倉"));
+                    const unitMatch = (normUnit === normalizeStr(FILTER_UNIT));
+
+                    if (whMatch && unitMatch) {
+                        countMatched++;
+                        // 尋找品號與預設品項的對應，如果對上，使用標準代碼
+                        const prod = PRODUCT_LIST.find(p => normalizeStr(p.code) === normCode || normalizeStr(p.name) === normCode);
+                        const finalCode = prod ? prod.code : normCode;
+
+                        const qty = parseNumber(qtyVal);
+                        currentInventory[finalCode] = (currentInventory[finalCode] || 0) + qty;
+                    }
+                });
+
+                // 更新背景診斷面板數據
+                diagTotalRows.textContent = countTotal;
+                diagKgRows.textContent = countKg;
+                diagWhRows.textContent = countWh;
+                diagMatchedRows.textContent = countMatched;
+
+                // 2. 讀取進貨數量表 (B 欄為品項代碼, F 欄開始為日期)
+                const incomingHistory = {};
+                if (incData.length > 0) {
+                    let headerRowIndex = -1;
+
+                    // 尋找標題列
+                    for (let r = 0; r < incData.length; r++) {
+                        const val = incData[r][1] ? normalizeStr(incData[r][1]) : '';
+                        if (val.includes('品') && val.includes('代')) {
+                            headerRowIndex = r;
+                            break;
+                        }
+                    }
+
+                    // 防呆：如果找不到標題列，找第一個出現已知代碼的列
+                    if (headerRowIndex === -1) {
+                        for (let r = 0; r < incData.length; r++) {
+                            const val = incData[r][1] ? normalizeStr(incData[r][1]) : '';
+                            if (PRODUCT_LIST.some(p => normalizeStr(p.code) === val)) {
+                                headerRowIndex = Math.max(0, r - 1);
+                                break;
+                            }
+                        }
+                    }
+
+                    if (headerRowIndex === -1) {
+                        throw new Error("無法定位進貨表的標題與日期列，請確認進貨表是否符合格式。");
+                    }
+
+                    // 抓取日期欄位：F 欄(Index 5)開始到最後一欄
+                    const dateColumns = [];
+                    const headers = incData[headerRowIndex];
+                    for (let col = 5; col < headers.length; col++) {
+                        const dateStr = headers[col] ? headers[col].toString().trim() : '';
+                        if (dateStr) {
+                            dateColumns.push({
+                                index: col,
+                                dateStr: cleanBOM(dateStr)
+                            });
+                        }
+                    }
+
+                    // 開始讀取各生菜品項在各日期的進貨量
+                    for (let r = headerRowIndex + 1; r < incData.length; r++) {
+                        const row = incData[r];
+                        if (!row) continue;
+                        let code = row[1]; // B 欄
+                        if (!code) continue;
+
+                        const normCode = normalizeStr(code);
+                        const prod = PRODUCT_LIST.find(p => normalizeStr(p.code) === normCode || normalizeStr(p.name) === normCode);
+                        const finalCode = prod ? prod.code : normCode;
+
+                        if (!incomingHistory[finalCode]) incomingHistory[finalCode] = [];
+
+                        dateColumns.forEach(dc => {
+                            const qtyVal = parseNumber(row[dc.index]);
+                            if (qtyVal > 0) {
+                                incomingHistory[finalCode].push({
+                                    date: dc.dateStr,
+                                    rawDate: new Date(dc.dateStr).getTime(),
+                                    qty: qtyVal
+                                });
+                            }
+                        });
+                    }
+                }
+
+                // 將每項生菜的進貨日紀錄按日期由「新 ➔ 舊」排序 (最新的進貨優先扣庫存)
+                Object.keys(incomingHistory).forEach(code => {
+                    incomingHistory[code].sort((a, b) => {
+                        if (isNaN(a.rawDate) || isNaN(b.rawDate)) {
+                            return b.date.localeCompare(a.date);
+                        }
+                        return b.rawDate - a.rawDate;
+                    });
+                });
+
+                // 3. FIFO 回推庫存組成並渲染 HTML
+                let tableHtml = '';
+                PRODUCT_LIST.forEach((product, idx) => {
+                    const balance = currentInventory[product.code] || 0;
+                    const history = incomingHistory[product.code] || [];
+
+                    let remainingToFulfill = balance;
+                    const breakdown = [];
+
+                    if (balance > 0) {
+                        for (let record of history) {
+                            if (remainingToFulfill <= 0) break;
+
+                            const take = Math.min(remainingToFulfill, record.qty);
+                            breakdown.push({ date: record.date, qty: take });
+                            remainingToFulfill -= take;
+                        }
+
+                        // 如果庫存結餘比所有進貨紀錄總和還多，則顯示早期結餘
+                        if (remainingToFulfill > 0) {
+                            breakdown.push({ date: '早期結餘', qty: remainingToFulfill });
+                        }
+                    }
+
+                    // 組裝 TR 列
+                    const isEven = idx % 2 === 0;
+                    const rowBg = isEven ? 'bg-white' : 'bg-gray-50';
+                    const balanceColor = balance > 0 ? 'bg-green-100 text-green-700 font-bold' : 'bg-gray-100 text-gray-400';
+
+                    let breakdownHtml = '';
+                    if (balance <= 0) {
+                        breakdownHtml = '<span class="text-gray-400 italic">無庫存</span>';
+                    } else {
+                        // 使用 flex flex-wrap 達成橫向流式並排標籤 (不用拉很長)
+                        breakdownHtml = '<div class="flex flex-wrap gap-1.5 max-w-2xl">';
+                        breakdown.forEach(bk => {
+                            const colors = getDateColorClass(bk.date);
+                            breakdownHtml += `
+                                <div class="inline-flex items-center text-xs border rounded px-2 py-0.5 shadow-sm transition-all hover:scale-[1.02] ${colors.bg} ${colors.border}">
+                                    <span class="font-bold text-[11px] ${colors.text}">${bk.date}</span>
+                                    <span class="text-gray-300 mx-1">|</span>
+                                    <span class="text-gray-700 font-semibold text-[11px]">${bk.qty.toFixed(2)} KG</span>
+                                </div>
+                            `;
+                        });
+                        breakdownHtml += '</div>';
+                    }
+
+                    tableHtml += `
+                        <tr class="border-b ${rowBg} hover:bg-blue-50/50 transition-colors">
+                            <td class="px-5 py-2 text-gray-600 font-mono text-[11px]">${product.code}</td>
+                            <td class="px-5 py-2 font-semibold text-gray-800 text-xs">${product.name}</td>
+                            <td class="px-5 py-2 text-right">
+                                <span class="inline-block px-2.5 py-0.5 rounded text-[11px] ${balanceColor}">
+                                    ${balance > 0 ? balance.toFixed(2) + ' KG' : '0.00'}
+                                </span>
+                            </td>
+                            <td class="px-5 py-2">${breakdownHtml}</td>
+                        </tr>
+                    `;
+                });
+
+                resultsTableBody.innerHTML = tableHtml;
+            } catch (err) {
+                showError("計算時發生錯誤：" + err.message);
+                console.error(err);
+            }
+        };
+
+        // UI 狀態處理
+        const setLoading = (loading) => {
+            if (loading) {
+                btnSpinner.classList.remove('hidden');
+                btnIcon.classList.add('hidden');
+                btnText.textContent = '系統處理並計算中...';
+                btnSubmit.disabled = true;
+                btnSubmit.classList.add('opacity-75', 'cursor-not-allowed');
+            } else {
+                btnSpinner.classList.add('hidden');
+                btnIcon.classList.remove('hidden');
+                btnText.textContent = '讀取表單並計算庫存進貨日';
+                btnSubmit.disabled = false;
+                btnSubmit.classList.remove('opacity-75', 'cursor-not-allowed');
+            }
+        };
+
+        const cleanBOM = (str) => {
+            if (!str) return '';
+            return str.toString().replace(/^\uFEFF/, '').trim();
+        };
+
+        const showError = (msg) => {
+            errorMessage.textContent = msg;
+            errorAlert.classList.remove('hidden');
+        };
+
+        const hideError = () => {
+            errorAlert.classList.add('hidden');
+        };
+
+        // 初始化第一次自動執行與定時器
+        window.addEventListener('DOMContentLoaded', () => {
+            triggerFetching(); // 頁面載入立即自動執行第一次比對
+            initAutoRefreshTimer(); // 初始化定時器
+        });
+    </script>
+</body>
+</html>
