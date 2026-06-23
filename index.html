@@ -181,7 +181,7 @@
         <!-- Results Table -->
         <div id="resultsSection" class="hidden bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
             <div class="px-5 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
-                <h2 class="text-sm font-bold text-gray-800">生菜剩餘庫存進貨日期推算 (理貨倉 - KG)</h2>
+                <h2 class="text-sm font-bold text-gray-800">生菜剩餘庫存進貨日期推算 (63-7倉 - KG)</h2>
                 <span id="lastUpdated" class="text-[11px] text-gray-500">最後更新：--:--:--</span>
             </div>
             <div class="overflow-x-auto">
@@ -463,7 +463,7 @@
                     if (normUnit === normalizeStr(FILTER_UNIT)) countKg++;
                     if (normWh === normalizeStr(FILTER_WAREHOUSE) || normWh.includes("63-7")) countWh++;
 
-                    // 過濾條件：單位 KG 且 倉庫為理貨倉
+                    // 過濾條件：單位 KG 且 倉庫為63-7倉
                     const whMatch = (normWh === normalizeStr(FILTER_WAREHOUSE)) || normWh.includes("63-7");
                     const unitMatch = (normUnit === normalizeStr(FILTER_UNIT));
 
