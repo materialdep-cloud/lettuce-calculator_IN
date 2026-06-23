@@ -36,7 +36,7 @@
                 </div>
                 <div class="flex gap-1.5">
                     <span class="text-[10px] bg-green-700/80 text-white px-2 py-1 rounded-full font-medium border border-green-500/20">
-                        📍 倉庫：63-6倉/下層/理貨倉
+                        📍 倉庫：63-7倉
                     </span>
                     <span class="text-[10px] bg-green-800/80 text-white px-2 py-1 rounded-full font-medium border border-green-600/20">
                         ⚖️ 單位：KG
@@ -111,8 +111,9 @@
                         </svg>
                     </summary>
                     <div class="px-3 pb-2.5 pt-1 space-y-1 text-[11px] text-emerald-800 border-t border-emerald-100">
-                        <p>● <b>庫存結餘</b>：抓取 B 欄品號，且過濾 <b>D 欄為 "KG"</b> 且 <b>E 欄為 "63-6倉/下層/理貨倉"</b>，以 <b>F 欄庫存量</b> 為基準進行回推。</p>
+                        <p>● <b>庫存結餘</b>：抓取 B 欄品號，且過濾 <b>D 欄為 "KG"</b> 且 <b>E 欄為 "63-7倉"</b>，以 <b>F 欄庫存量</b> 為基準進行回推。</p>
                         <p>● <b>進貨日期</b>：自動解析進貨表 B 欄品號，並由 <b>F 欄 (Index 5) 往右橫向抓取</b> 各日期之進貨數量進行先進先出（FIFO）計算。</p>
+                        <p>● <b>數據警示</b>：若某品項之庫存結餘，大於進貨表中所有日期累加的進貨總量，系統會判定數據異常並標記為 <span class="text-red-600 font-bold">⚠️ 數據異常</span>。</p>
                     </div>
                 </details>
 
@@ -140,14 +141,14 @@
                             <p class="text-white font-semibold">【匹配數據指標】</p>
                             <p>● 庫存表讀取總列數：<span id="diagTotalRows" class="text-green-400 font-bold">0</span> 列</p>
                             <p>● 單位為 "KG" 的列數：<span id="diagKgRows" class="text-green-400 font-bold">0</span> 列</p>
-                            <p>● 倉庫為 "理貨倉" 的列數：<span id="diagWhRows" class="text-green-400 font-bold">0</span> 列</p>
-                            <p>● 符合 "理貨倉 + KG" 的加總：<span id="diagMatchedRows" class="text-yellow-400 font-bold">0</span> 列</p>
+                            <p>● 倉庫為 "63-7倉" 的列數：<span id="diagWhRows" class="text-green-400 font-bold">0</span> 列</p>
+                            <p>● 符合 "63-7倉 + KG" 的加總：<span id="diagMatchedRows" class="text-yellow-400 font-bold">0</span> 列</p>
                         </div>
                         <div class="text-gray-400 space-y-0.5">
                             <p class="text-white font-semibold">【系統設定預期欄位】</p>
                             <p>● [B 欄 / 索引 1]：品項代號</p>
                             <p>● [D 欄 / 索引 3]：單位 (預期: KG)</p>
-                            <p>● [E 欄 / 索引 4]：倉庫 (預期: 63-6倉/下層/理貨倉)</p>
+                            <p>● [E 欄 / 索引 4]：倉庫 (預期: 63-7倉)</p>
                             <p>● [F 欄 / 索引 5]：庫存量 (結餘數字)</p>
                         </div>
                     </div>
@@ -163,7 +164,7 @@
                     </div>
                 </div>
 
-                <!-- Action Button (更緊湊，取消閃爍動畫以符合高階質感) -->
+                <!-- Action Button -->
                 <button 
                     id="btnSubmit"
                     class="w-full py-2.5 rounded-lg font-bold text-white flex items-center justify-center gap-2 transition-all bg-green-600 hover:bg-green-700 shadow-sm text-sm"
@@ -208,6 +209,7 @@
             { code: 'T05000102', name: '紅捲生菜［水耕］' },
             { code: 'T06000101', name: '綠捲鬚生菜' },
             { code: 'T07000101', name: '紅橡木生菜' },
+            { code: 'T08000102', name: '紅橡木生菜［水耕］' },
             { code: 'T08000101', name: '綠橡木生菜' },
             { code: 'T08000102', name: '綠橡木生菜［水耕］' },
             { code: 'T09000101', name: '紅火焰生菜' },
@@ -240,7 +242,11 @@
         ];
 
         // 根據日期名稱生成固定的雜湊色彩
-        const getDateColorClass = (dateStr) => {
+        const getDateColorClass = (dateStr, isAbnormal) => {
+            if (isAbnormal) {
+                // 異常區塊專用：紅色警示配色
+                return { bg: 'bg-red-50 animate-pulse', border: 'border-red-300', text: 'text-red-700 font-bold' };
+            }
             if (!dateStr || dateStr.includes('早期結餘')) {
                 return { bg: 'bg-gray-100', border: 'border-gray-300', text: 'text-gray-600' };
             }
@@ -252,8 +258,8 @@
             return COLOR_SCHEMES[index];
         };
 
-        // 倉庫與單位過濾常數
-        const FILTER_WAREHOUSE = "63-6倉/下層/理貨倉";
+        // 倉庫與單位過濾常數 (已修正為 63-7倉)
+        const FILTER_WAREHOUSE = "63-7倉";
         const FILTER_UNIT = "KG";
 
         // 動態更新計時器設定
@@ -449,10 +455,10 @@
 
                     // 診斷計數
                     if (normUnit === normalizeStr(FILTER_UNIT)) countKg++;
-                    if (normWh === normalizeStr(FILTER_WAREHOUSE) || (normWh.includes("63-6") && normWh.includes("理貨倉"))) countWh++;
+                    if (normWh === normalizeStr(FILTER_WAREHOUSE) || normWh.includes("63-7")) countWh++;
 
                     // 過濾條件：單位 KG 且 倉庫為理貨倉
-                    const whMatch = (normWh === normalizeStr(FILTER_WAREHOUSE)) || (normWh.includes("63-6") && normWh.includes("理貨倉"));
+                    const whMatch = (normWh === normalizeStr(FILTER_WAREHOUSE)) || normWh.includes("63-7");
                     const unitMatch = (normUnit === normalizeStr(FILTER_UNIT));
 
                     if (whMatch && unitMatch) {
@@ -564,32 +570,41 @@
                             if (remainingToFulfill <= 0) break;
 
                             const take = Math.min(remainingToFulfill, record.qty);
-                            breakdown.push({ date: record.date, qty: take });
+                            breakdown.push({ date: record.date, qty: take, isAbnormal: false });
                             remainingToFulfill -= take;
                         }
 
-                        // 如果庫存結餘比所有進貨紀錄總和還多，則顯示早期結餘
+                        // 如果庫存結餘比所有進貨紀錄總和還多，表示多出的庫存找不到來源 (異常！)
                         if (remainingToFulfill > 0) {
-                            breakdown.push({ date: '早期結餘', qty: remainingToFulfill });
+                            breakdown.push({ date: '來源不明', qty: remainingToFulfill, isAbnormal: true });
                         }
                     }
+
+                    // 判斷該品項帳務是否異常
+                    const hasDiscrepancy = balance > 0 && remainingToFulfill > 0;
 
                     // 組裝 TR 列
                     const isEven = idx % 2 === 0;
                     const rowBg = isEven ? 'bg-white' : 'bg-gray-50';
-                    const balanceColor = balance > 0 ? 'bg-green-100 text-green-700 font-bold' : 'bg-gray-100 text-gray-400';
+                    const balanceColor = balance > 0 ? (hasDiscrepancy ? 'bg-red-100 text-red-700 font-bold border border-red-300' : 'bg-green-100 text-green-700 font-bold') : 'bg-gray-100 text-gray-400';
+
+                    // 顯示紅色閃爍的異常警告 Badge
+                    const abnormalBadge = hasDiscrepancy 
+                        ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-red-500 text-white text-[9px] font-extrabold animate-pulse ml-1 shrink-0">⚠️ 數據異常</span>` 
+                        : '';
 
                     let breakdownHtml = '';
                     if (balance <= 0) {
                         breakdownHtml = '<span class="text-gray-400 italic">無庫存</span>';
                     } else {
-                        // 使用 flex flex-wrap 達成橫向流式並排標籤 (不用拉很長)
+                        // 使用 flex flex-wrap 達成橫向流式並排標籤
                         breakdownHtml = '<div class="flex flex-wrap gap-1.5 max-w-2xl">';
                         breakdown.forEach(bk => {
-                            const colors = getDateColorClass(bk.date);
+                            const colors = getDateColorClass(bk.date, bk.isAbnormal);
+                            const labelText = bk.isAbnormal ? '⚠️ 來源不明(異常)' : bk.date;
                             breakdownHtml += `
                                 <div class="inline-flex items-center text-xs border rounded px-2 py-0.5 shadow-sm transition-all hover:scale-[1.02] ${colors.bg} ${colors.border}">
-                                    <span class="font-bold text-[11px] ${colors.text}">${bk.date}</span>
+                                    <span class="font-bold text-[11px] ${colors.text}">${labelText}</span>
                                     <span class="text-gray-300 mx-1">|</span>
                                     <span class="text-gray-700 font-semibold text-[11px]">${bk.qty.toFixed(2)} KG</span>
                                 </div>
@@ -601,7 +616,10 @@
                     tableHtml += `
                         <tr class="border-b ${rowBg} hover:bg-blue-50/50 transition-colors">
                             <td class="px-5 py-2 text-gray-600 font-mono text-[11px]">${product.code}</td>
-                            <td class="px-5 py-2 font-semibold text-gray-800 text-xs">${product.name}</td>
+                            <td class="px-5 py-2 font-semibold text-gray-800 text-xs flex items-center justify-start gap-1">
+                                <span>${product.name}</span>
+                                ${abnormalBadge}
+                            </td>
                             <td class="px-5 py-2 text-right">
                                 <span class="inline-block px-2.5 py-0.5 rounded text-[11px] ${balanceColor}">
                                     ${balance > 0 ? balance.toFixed(2) + ' KG' : '0.00'}
