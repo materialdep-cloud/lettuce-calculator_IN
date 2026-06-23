@@ -31,7 +31,7 @@
                     </div>
                     <div>
                         <h1 class="text-lg font-bold text-white leading-tight">生菜庫存進貨日回推系統</h1>
-                        <p class="text-[10px] text-green-100">Google 試算表 FIFO 庫存分析</p>
+                        <p class="text-[10px] text-green-100">Google 試算表 FIFO 庫存分析 (已啟用防快取機制)</p>
                     </div>
                 </div>
                 <div class="flex gap-1.5">
@@ -205,27 +205,27 @@
     <script>
         // 固定的生菜品項資料
         const PRODUCT_LIST = [
-            { code: 'T05000101', name: '紅捲生菜-3kg/件' },
-            { code: 'T05000102', name: '紅捲生菜［水耕］-5kg/件' },
-            { code: 'T06000101', name: '綠捲鬚生菜-3kg/件' },
-            { code: 'T07000101', name: '紅橡木生菜-3kg/件' },
-            { code: 'T07000102', name: '紅橡木生菜［水耕］-5kg/件' },
-            { code: 'T08000101', name: '綠橡木生菜-3kg/件' },
-            { code: 'T08000102', name: '綠橡木生菜［水耕］-5kg/件' },
-            { code: 'T09000101', name: '紅火焰生菜-3kg/件' },
-            { code: 'T10000101', name: '綠火焰生菜-3kg/件' },
-            { code: 'T10000102', name: '綠火焰生菜［水耕］-5kg/件' },
-            { code: 'T11000101', name: '紅蘿蔓-3kg/件' },
-            { code: 'T12000101', name: '波士頓奶油生菜-3kg/件' },
-            { code: 'T12000102', name: '波士頓奶油生菜［水耕］-5kg/件'},
-            { code: 'T13000101', name: '羽衣甘藍-3kg/件' },
-            { code: 'T14000101', name: '巴西里［平葉］-3kg/件'},
-            { code: 'T14000102', name: '巴西里［捲葉］-3kg/件'},
+            { code: 'T05000101', name: '紅捲生菜' },
+            { code: 'T05000102', name: '紅捲生菜［水耕］' },
+            { code: 'T06000101', name: '綠捲鬚生菜' },
+            { code: 'T07000101', name: '紅橡木生菜' },
+            { code: 'T08000102', name: '紅橡木生菜［水耕］' },
+            { code: 'T08000101', name: '綠橡木生菜' },
+            { code: 'T08000102', name: '綠橡木生菜［水耕］' },
+            { code: 'T09000101', name: '紅火焰生菜' },
+            { code: 'T10000101', name: '綠火焰生菜' },
+            { code: 'T10000102', name: '綠火焰生菜［水耕］' },
+            { code: 'T11000101', name: '紅蘿蔓' },
+            { code: 'T12000101', name: '波士頓奶油生菜' },
+            { code: 'T12000102', name: '波士頓奶油生菜［水耕］' },
+            { code: 'T13000101', name: '羽衣甘藍' },
+            { code: 'T14000101', name: '巴西里［平葉］' },
+            { code: 'T14000102', name: '巴西里［捲葉］' },
             { code: 'T15000101', name: '紅包心生菜' },
             { code: 'T17000101', name: '本產紫高麗菜' },
-            { code: 'T18000101', name: '紅甜脆生菜［水耕］-5kg/件'},
-            { code: 'T19000101', name: '綠甜脆生菜［水耕］-5kg/件'},
-            { code: 'T20000101', name: '綠水晶生菜［水耕］-5kg/件'},
+            { code: 'T18000101', name: '紅甜脆生菜［水耕］' },
+            { code: 'T19000101', name: '綠甜脆生菜［水耕］' },
+            { code: 'T20000101', name: '綠水晶生菜［水耕］' },
             { code: 'T21000101', name: '廣東生菜' }
         ];
 
@@ -323,9 +323,15 @@
                 .toUpperCase();
         };
 
-        // 抓取與解析 CSV
+        // 抓取與解析 CSV (已加入 Cache-Busting 自動防暫存技術)
         const fetchCSV = (url) => {
-            const fixedUrl = url.replace(/\/pubhtml$/, '/pub?output=csv').replace(/\/pubhtml\?/, '/pub?output=csv&');
+            // 1. 標準化 Google 試算表 CSV 輸出格式網址
+            let fixedUrl = url.replace(/\/pubhtml$/, '/pub?output=csv').replace(/\/pubhtml\?/, '/pub?output=csv&');
+            
+            // 2. 加入動態時間戳記避免伺服器/瀏覽器暫存快取
+            const separator = fixedUrl.includes('?') ? '&' : '?';
+            fixedUrl = `${fixedUrl}${separator}_t=${Date.now()}`;
+
             return new Promise((resolve, reject) => {
                 Papa.parse(fixedUrl, {
                     download: true,
