@@ -31,7 +31,7 @@
                     </div>
                     <div>
                         <h1 class="text-lg font-bold text-white leading-tight">生菜庫存進貨日回推系統</h1>
-                        <p class="text-[10px] text-green-100">Google 試算表 FIFO 庫存分析 (已啟用防快取、最舊日期優先、小農智慧圖章)</p>
+                        <p class="text-[10px] text-green-100">Google 試算表 FIFO 庫存分析 (跨裝置高相容版)</p>
                     </div>
                 </div>
                 <div class="flex gap-1.5">
@@ -181,7 +181,7 @@
         <!-- Results Table -->
         <div id="resultsSection" class="hidden bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
             <div class="px-5 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
-                <h2 class="text-sm font-bold text-gray-800">生菜剩餘庫存進貨日期推算 (理貨倉 - KG)</h2>
+                <h2 class="text-sm font-bold text-gray-800">生菜剩餘庫存進貨日期推算 (63-7倉 - KG)</h2>
                 <span id="lastUpdated" class="text-[11px] text-gray-500">最後更新：--:--:--</span>
             </div>
             <div class="overflow-x-auto">
@@ -203,17 +203,17 @@
     </div>
 
     <script>
-        // 固定的生菜品項資料 (已修正品號)
+        // 固定的生菜品項資料
         const PRODUCT_LIST = [
             { code: 'T05000101', name: '紅捲生菜' },
             { code: 'T05000102', name: '紅捲生菜［水耕］' },
             { code: 'T06000101', name: '綠捲鬚生菜' },
             { code: 'T07000101', name: '紅橡木生菜' },
-            { code: 'T07000102', name: '紅橡木生菜［水耕］' }, // 修正品號
+            { code: 'T07000102', name: '紅橡木生菜［水耕］' }, 
             { code: 'T08000101', name: '綠橡木生菜' },
             { code: 'T08000102', name: '綠橡木生菜［水耕］' },
             { code: 'T09000101', name: '紅火焰生菜' },
-            { code: 'T09000102', name: '紅火焰生菜［水耕］' }, // 新增品項
+            { code: 'T09000102', name: '紅火焰生菜［水耕］' }, 
             { code: 'T10000101', name: '綠火焰生菜' },
             { code: 'T10000102', name: '綠火焰生菜［水耕］' },
             { code: 'T11000101', name: '紅蘿蔓' },
@@ -230,7 +230,6 @@
             { code: 'T21000101', name: '廣東生菜' }
         ];
 
-        // 溫和清新的配色方案，供 dynamic 日期交錯搭配使用
         const COLOR_SCHEMES = [
             { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700' },
             { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700' },
@@ -240,7 +239,6 @@
             { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700' }
         ];
 
-        // 根據日期名稱生成固定的雜湊色彩
         const getDateColorClass = (dateStr, isAbnormal) => {
             if (isAbnormal) {
                 return { bg: 'bg-red-50 animate-pulse', border: 'border-red-300', text: 'text-red-700 font-bold' };
@@ -259,13 +257,11 @@
         const FILTER_WAREHOUSE = "63-7倉";
         const FILTER_UNIT = "KG";
 
-        // 動態更新計時器設定
         const REFRESH_SECONDS = 30;
         let countdownSeconds = REFRESH_SECONDS;
         let isAutoRefreshActive = true;
         let autoRefreshTimer = null;
 
-        // DOM 綁定
         const btnSubmit = document.getElementById('btnSubmit');
         const btnSpinner = document.getElementById('btnSpinner');
         const btnIcon = document.getElementById('btnIcon');
@@ -276,7 +272,6 @@
         const resultsTableBody = document.getElementById('resultsTableBody');
         const lastUpdatedText = document.getElementById('lastUpdated');
         
-        // 診斷面版 DOM
         const btnToggleDiag = document.getElementById('btnToggleDiag');
         const diagnosticPanel = document.getElementById('diagnosticPanel');
         const diagTotalRows = document.getElementById('diagTotalRows');
@@ -285,7 +280,6 @@
         const diagInvPreview = document.getElementById('diagInvPreview');
         const diagIncPreview = document.getElementById('diagIncPreview');
 
-        // 自動刷新組件 DOM
         const btnToggleRefresh = document.getElementById('btnToggleRefresh');
         const iconPause = document.getElementById('iconPause');
         const iconPlay = document.getElementById('iconPlay');
@@ -297,6 +291,15 @@
 
         btnToggleDiag.addEventListener('click', () => {
             diagnosticPanel.classList.toggle('hidden');
+        });
+
+        // 當使用者切回網頁時 (手機喚醒)，自動觸發一次更新，解決手機鎖屏計時器暫停問題
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && isAutoRefreshActive) {
+                // 將倒數計時設為 1 秒，讓使用者能立刻看到更新動畫並載入最新資料
+                countdownSeconds = 1;
+                updateProgressBar();
+            }
         });
 
         const parseNumber = (val) => {
@@ -314,6 +317,34 @@
                 .replace(/／/g, '/')
                 .trim()
                 .toUpperCase();
+        };
+
+        // 絕對無敵日期解析引擎 - 徹底解決 iPhone Safari 排序 Bug
+        const parseRobustDate = (dateStr) => {
+            if (!dateStr) return 0;
+            if (dateStr.includes('以前')) return 10; // 保證排在最前
+            
+            // 將類似 "6/23", "2026/06/25" 拆解並轉為純數字 YYYYMMDD
+            const normalized = dateStr.replace(/[-\.]/g, '/').split(' ')[0]; 
+            const parts = normalized.split('/');
+            
+            if (parts.length === 2) {
+                // 格式為 M/D (假設為今年)
+                const m = parseInt(parts[0], 10) || 0;
+                const d = parseInt(parts[1], 10) || 0;
+                return (new Date().getFullYear()) * 10000 + m * 100 + d;
+            } else if (parts.length === 3) {
+                // 格式為 Y/M/D
+                let y = parseInt(parts[0], 10) || 0;
+                const m = parseInt(parts[1], 10) || 0;
+                const d = parseInt(parts[2], 10) || 0;
+                if (y < 100) y += 2000; // 處理 26/06/25 這種兩位數年份
+                return y * 10000 + m * 100 + d;
+            }
+            
+            // 若為無法識別之字串，退回原生 Date 解析
+            const fallback = new Date(dateStr).getTime();
+            return isNaN(fallback) ? 99999999 : fallback;
         };
 
         const fetchCSV = (url) => {
@@ -398,14 +429,13 @@
         };
 
         const updateProgressBar = () => {
-            const percentage = (countdownSeconds / REFRESH_SECONDS) * 100;
+            const percentage = (Math.max(0, countdownSeconds) / REFRESH_SECONDS) * 100;
             refreshProgressBar.style.width = `${percentage}%`;
-            countdownTimer.textContent = `${countdownSeconds}s`;
+            countdownTimer.textContent = `${Math.max(0, countdownSeconds)}s`;
         };
 
         const processAndCalculate = (invData, incData) => {
             try {
-                // 更新診斷預覽畫面
                 let invPreviewText = '';
                 invData.slice(0, 3).forEach((row, i) => {
                     invPreviewText += `[列 ${i + 1}]：` + JSON.stringify(row) + '\n';
@@ -418,7 +448,7 @@
                 });
                 diagIncPreview.textContent = incPreviewText || '無資料';
 
-                // 1. 讀取庫存結餘表 (B 欄品代, D 欄單位, E 欄倉庫, F 欄庫存量)
+                // 1. 讀取庫存結餘表
                 const currentInventory = {};
                 let countTotal = 0;
                 let countMatched = 0;
@@ -427,10 +457,10 @@
                     if (idx === 0) return;
                     countTotal++;
 
-                    let code = row[1];       // B 欄
-                    let unit = row[3];       // D 欄
-                    let warehouse = row[4];  // E 欄
-                    let qtyVal = row[5];     // F 欄
+                    let code = row[1];       
+                    let unit = row[3];       
+                    let warehouse = row[4];  
+                    let qtyVal = row[5];     
 
                     if (!code) return;
 
@@ -454,15 +484,14 @@
                 diagTotalRows.textContent = countTotal;
                 diagMatchedRows.textContent = countMatched;
 
-                // 2. 建立進貨對應表 (由底向上 Bottom-up 智慧小農偵測 ＆ 日期抓取)
+                // 2. 讀取進貨數量表
                 const incomingHistory = {};
-                const colFarmerMap = {}; // 用於將欄位 Index 對應到小農名稱
+                const colFarmerMap = {}; 
                 let countFarmers = 0;
 
                 if (incData.length > 0) {
                     let headerRowIndex = -1;
 
-                    // 尋找標題日期列
                     for (let r = 0; r < incData.length; r++) {
                         const val = incData[r][1] ? normalizeStr(incData[r][1]) : '';
                         if (val.includes('品') && val.includes('代')) {
@@ -485,32 +514,26 @@
                         throw new Error("無法定位進貨表的標題與日期列，請確認進貨表結構。");
                     }
 
-                    // 抓取日期欄位：F 欄開始向右
                     const dateColumns = [];
                     const headers = incData[headerRowIndex];
                     for (let col = 5; col < headers.length; col++) {
                         const dateStr = headers[col] ? headers[col].toString().trim() : '';
                         if (dateStr) {
-                            let parsedTime = new Date(dateStr).getTime();
-                            if (dateStr.includes('以前')) {
-                                parsedTime = 10; // 保證排在最前面
-                            }
                             dateColumns.push({
                                 index: col,
                                 dateStr: cleanBOM(dateStr),
-                                parsedTime: parsedTime
+                                parsedTime: parseRobustDate(cleanBOM(dateStr)) // 採用跨裝置無敵解析器
                             });
                         }
                     }
 
-                    // 【核心修正】：從進貨表每一列日期的最底下一行向上 (Bottom-up) 搜尋第一個非空儲存格
                     dateColumns.forEach(dc => {
                         let foundFarmer = '';
                         for (let r = incData.length - 1; r >= 0; r--) {
                             const row = incData[r];
                             if (!row) continue;
                             const cellVal = row[dc.index] ? normalizeStr(row[dc.index]) : '';
-                            if (!cellVal) continue; // 跳過空值
+                            if (!cellVal) continue;
 
                             if (cellVal.includes('邱薏芬') || cellVal.includes('薏芬')) {
                                 foundFarmer = '邱薏芬';
@@ -526,16 +549,14 @@
                         }
                     });
 
-                    // 讀取各生菜品項在各日期的實際進貨量
                     for (let r = headerRowIndex + 1; r < incData.length; r++) {
                         const row = incData[r];
                         if (!row) continue;
-                        let code = row[1]; // B 欄品代
+                        let code = row[1];
                         if (!code) continue;
 
                         const normCode = normalizeStr(code);
                         
-                        // 排除農民或標記列本身，避免計入數量
                         if (normCode.includes('品') || normCode.includes('代') || normCode.includes('農民') || normCode.includes('邱薏芬') || normCode.includes('川聖') || normCode.includes('薏芬')) {
                             continue;
                         }
@@ -548,11 +569,10 @@
                         dateColumns.forEach(dc => {
                             const qtyVal = parseNumber(row[dc.index]);
                             if (qtyVal > 0) {
-                                // 徹底移除橫列掃描，嚴格只採用該日期(直行)對應到的小農
                                 incomingHistory[finalCode].push({
                                     date: dc.dateStr,
                                     rawDate: dc.parsedTime,
-                                    colIndex: dc.index, // 記錄欄位位置，作為同天多筆排序依據
+                                    colIndex: dc.index, 
                                     qty: qtyVal,
                                     farmer: colFarmerMap[dc.index] || ''
                                 });
@@ -566,18 +586,14 @@
                 // 排序進貨歷史：計算扣抵時，最新的進貨優先扣庫存
                 Object.keys(incomingHistory).forEach(code => {
                     incomingHistory[code].sort((a, b) => {
-                        // 如果日期一模一樣，先扣左邊欄位 (索引較小)
                         if (a.rawDate === b.rawDate) {
-                            return a.colIndex - b.colIndex;
+                            return b.colIndex - a.colIndex; // 日期一樣時，優先扣右邊(較新)
                         }
-                        if (isNaN(a.rawDate) || isNaN(b.rawDate)) {
-                            return a.date.localeCompare(b.date);
-                        }
-                        return b.rawDate - a.rawDate; // 新 ➔ 舊，因為我們要從最新開始扣庫存
+                        return b.rawDate - a.rawDate; // 新 ➔ 舊
                     });
                 });
 
-                // 3. FIFO 回推庫存組成並渲染 HTML
+                // 3. FIFO 回推庫存組成並渲染
                 let tableHtml = '';
                 PRODUCT_LIST.forEach((product, idx) => {
                     const balance = currentInventory[product.code] || 0;
@@ -606,7 +622,7 @@
                             breakdown.push({ 
                                 date: '來源不明', 
                                 rawDate: 0,
-                                colIndex: 9999, // 放到最後
+                                colIndex: -1, 
                                 qty: remainingToFulfill, 
                                 isAbnormal: true,
                                 farmer: ''
@@ -619,12 +635,8 @@
                         if (a.isAbnormal) return 1;
                         if (b.isAbnormal) return -1;
                         
-                        // 相同日期的話，保留左至右(較舊到較新)順序
                         if (a.rawDate === b.rawDate) {
                             return a.colIndex - b.colIndex;
-                        }
-                        if (isNaN(a.rawDate) || isNaN(b.rawDate)) {
-                            return a.date.localeCompare(b.date);
                         }
                         return a.rawDate - b.rawDate; // 最舊 ➔ 最新
                     });
@@ -647,7 +659,6 @@
                             const colors = getDateColorClass(bk.date, bk.isAbnormal);
                             const labelText = bk.isAbnormal ? '⚠️ 來源不明(異常)' : bk.date;
                             
-                            // 邱薏芬採用 🍂，川聖採用 🍃
                             let farmerIcon = '';
                             if (bk.farmer === '邱薏芬') {
                                 farmerIcon = `<span class="cursor-help text-sm" title="農民：邱薏芬">🍂 </span>`;
